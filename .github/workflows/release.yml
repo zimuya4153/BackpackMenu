@@ -28,6 +28,9 @@ jobs:
       steps:
         - name: Checkout code
           uses: actions/checkout@v4
+
+        - name: Create artifact folder
+          run: mkdir -p -v artifact/${{ github.event.repository.name }}
   
         - name: Pack plugin
           run: |
