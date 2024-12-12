@@ -34,7 +34,7 @@ jobs:
   
         - name: Pack plugin
           run: |
-            cp -v BackpackMenu.js manifest.json lang/*.json artifact/${{ github.event.repository.name }}
+            cp -v -r BackpackMenu.js manifest.json lang artifact/${{ github.event.repository.name }}
   
         - name: Copy additional files
           run: |
