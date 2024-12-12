@@ -1,0 +1,49 @@
+on:
+  release:
+      types:
+        - published
+  
+jobs:
+  update-release-notes:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: extract-release-notes
+        uses: ffurrer2/extract-release-notes@v2
+
+      - uses: softprops/action-gh-release@v1
+        with:
+          body: |
+            ${{ steps.extract-release-notes.outputs.release_notes }}
+
+  upload-to-release:
+      needs: 
+        - update-release-notes
+      permissions:
+        contents: write
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+  
+        - name: Pack plugin
+          run: |
+            cp -v BackpackMenu.js manifest.json lang/*.json artifact/${{ github.event.repository.name }}
+  
+        - name: Copy additional files
+          run: |
+            cp -v CHANGELOG.md LICENSE README.md artifact/
+  
+        - name: Archive release
+          run: |
+            zip -r ../${{ github.event.repository.name }}.zip *
+          working-directory: artifact
+  
+        - name: Create GitHub Release
+          uses: softprops/action-gh-release@v1
+          with:
+            files: |
+              ${{ github.event.repository.name }}.zip
