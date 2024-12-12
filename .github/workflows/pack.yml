@@ -1,0 +1,30 @@
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+  
+jobs:
+  pack:
+      permissions:
+        contents: write
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+
+        - name: Create artifact folder
+          run: mkdir -p -v artifact/${{ github.event.repository.name }}
+  
+        - name: Pack plugin
+          run: |
+            cp -v -r BackpackMenu.js manifest.json lang artifact/${{ github.event.repository.name }}
+  
+        - name: Copy additional files
+          run: |
+            cp -v CHANGELOG.md LICENSE README.md artifact/
+
+        - uses: actions/upload-artifact@v4
+          with:
+            name: ${{ github.event.repository.name }}-${{ github.sha }}
+            path: |
+              artifact/
