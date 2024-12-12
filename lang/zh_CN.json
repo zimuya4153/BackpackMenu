@@ -1,0 +1,8 @@
+{
+    "Failed to load configuration file.\n{0}": "加载配置文件失败.\n{0}",
+    "Loading configuration file...": "加载配置文件...",
+    "Failed to send message. Player: {0}\n{1}": "发送消息失败. 玩家: {0}\n{1}",
+    "Configuration file not found.": "配置文件不存在.",
+    "Invalid configuration {0}.": "无效配置: {0}.",
+    "Failed to save configuration file.\n{0}": "保存配置文件失败.\n{0}"
+}

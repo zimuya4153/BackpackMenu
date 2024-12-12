@@ -1,0 +1,8 @@
+{
+    "Failed to load configuration file.\n{0}": "Failed to load configuration file.\n{0}",
+    "Loading configuration file...": "Loading configuration file...",
+    "Failed to send message. Player: {0}\n{1}": "Failed to send message. Player: {0}\n{1}",
+    "Configuration file not found.": "Configuration file not found.",
+    "Invalid configuration {0}.": "Invalid configuration {0}.",
+    "Failed to save configuration file.\n{0}": "Failed to save configuration file.\n{0}"
+}

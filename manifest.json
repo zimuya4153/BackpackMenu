@@ -1,0 +1,19 @@
+{
+    "entry": "BackpackMenu.js",
+    "name": "BackpackMenu",
+    "type": "lse-quickjs",
+    "author": "啥也不会的子沐呀 & 黯灭",
+    "version": "0.0.0",
+    "description": "背包菜单",
+    "dependencies": [
+        {
+            "name": "legacy-script-engine-quickjs"
+        },
+        {
+            "name": "GMLIB"
+        },
+        {
+            "name": "GMLIB-LegacyRemoteCallApi"
+        }
+    ]
+}
