@@ -67,32 +67,32 @@ const msgToString = msg => {
 };
 
 // 替换日志输出
-(function ReplaceLog() {
-    /** 原输出函数 @type {Object.<string, function(...any): void>} */
-    const originLog = {};
+// (function ReplaceLog() {
+//     /** 原输出函数 @type {Object.<string, function(...any): void>} */
+//     const originLog = {};
 
-    ["log", "debug", "info", "warn", "error", "fatal"].forEach(name => {
-        originLog[name] = logger[name];
-        logger[name] = (...args) => {
-            try {
-                args = args.map(msgToString);
-                let msg = i18n.tr(args[0], ...args.slice(1)).trim();
-                if (msg === args[0]) msg = args.map(str => i18n.tr(str)).join(" ").trim();
-                if (
-                    msg === "" ||
-                    global.logTemp.includes(msg)
-                ) return;
-                global.logTemp.push(msg);
-                setTimeout(() => {
-                    global.logTemp.splice(global.logTemp.indexOf(msg), 1);
-                }, typeof global.config.logTempCleanTime === "number" ? global.config.logTempCleanTime : 1000 * 10);
-                msg.split("\n").forEach(line => originLog[name](line));
-            } catch (error) { originLog.error(error); }
-        };
-    });
+//     ["log", "debug", "info", "warn", "error", "fatal"].forEach(name => {
+//         originLog[name] = logger[name];
+//         logger[name] = (...args) => {
+//             try {
+//                 args = args.map(msgToString);
+//                 let msg = i18n.tr(args[0], ...args.slice(1)).trim();
+//                 if (msg === args[0]) msg = args.map(str => i18n.tr(str)).join(" ").trim();
+//                 if (
+//                     msg === "" ||
+//                     global.logTemp.includes(msg)
+//                 ) return;
+//                 global.logTemp.push(msg);
+//                 setTimeout(() => {
+//                     global.logTemp.splice(global.logTemp.indexOf(msg), 1);
+//                 }, typeof global.config.logTempCleanTime === "number" ? global.config.logTempCleanTime : 1000 * 10);
+//                 msg.split("\n").forEach(line => originLog[name](line));
+//             } catch (error) { originLog.error(error); }
+//         };
+//     });
 
-    log = logger.log;
-})();
+//     log = logger.log;
+// })();
 
 // 替换发送信息
 (function ReplaceSendMsg() {
@@ -148,6 +148,180 @@ const msgToString = msg => {
 
 
 
+/**
+ * 发送打开背包数据包
+ * @param {Player} player
+ */
+const openInventory = player => {
+    const bs = new GMLIB_BinaryStream();
+    bs.writePacketHeader(/* MinecraftPacketIds::ContainerOpen */0x2E); // Packet Header
+    bs.writeByte(/* ContainerID::Inventory */0); // Container ID
+    bs.writeByte(/* ContainerType::Inventory */-1); // Container Type
+    bs.writeBlockPos(player.blockPos); // Container Position
+    bs.writeVarInt64(-1); // Container Entity ID
+    bs.sendTo(player);
+};
+
+/**
+ * 发送关闭背包数据包
+ * @param {Player} player
+ */
+const closeInventory = player => {
+    
+    const mode = player.gameMode;
+    let bs = new GMLIB_BinaryStream();
+    bs.writePacketHeader(/* MinecraftPacketIds::SetPlayerGameType */0x3e);
+    bs.writeVarInt(6); // Game Mode
+    bs.sendTo(player);
+
+    setTimeout(()=>{
+        bs = new GMLIB_BinaryStream();
+        bs.writePacketHeader(/* MinecraftPacketIds::SetPlayerGameType */0x3e);
+        bs.writeVarInt(mode); // Game Mode
+        bs.sendTo(player);
+    },1);
+
+    // const bs = new GMLIB_BinaryStream();
+    // bs.writePacketHeader(/* MinecraftPacketIds::ContainerClose */0x2F); // Packet Header
+    // bs.writeByte(/* ContainerID::Inventory */0); // Container ID
+    // bs.writeByte(/* ContainerType::Inventory */-1); // Container Type
+    // bs.writeBool(true); // Server Initiated Close
+    // bs.sendTo(player);
+    // log('已发送关闭背包数据包')
+};
+
+/**
+ * 更新背包物品
+ * @param {Player} player
+ * @param {number} slot
+ * @param {Item} item
+ */
+const updateItem = (player, slot, item) => {
+    const bs = new GMLIB_BinaryStream();
+    bs.writePacketHeader(/* MinecraftPacketIds::InventorySlot */0x32); // Packet Header
+    bs.writeUnsignedVarInt(0); // Container ID
+    bs.writeUnsignedVarInt(slot); // Slot ID
+    bs.writeItem(item); // Item
+    bs.sendTo(player);
+};
+
+
+const allMenu = {};
+
+// 事件：操作菜单
+Event.listen("onHandleRequestAction", (player, actionType, count, sourceContainerNetId, sourceSlot) => {
+    //log('物品操作类型: ', actionType, ' 操作数量:', count, ' 容器类型:', sourceContainerNetId, ' 槽位:', sourceSlot)
+    if (sourceContainerNetId != 'HotbarContainer' && sourceContainerNetId != 'InventoryContainer'){return;}
+    if (allMenu[player.uuid] == undefined){return;}
+    
+    let playerMenu = allMenu[player.uuid];
+    let callback = playerMenu.buttons[sourceSlot].callback;
+    if (playerMenu.buttons[sourceSlot].sound){
+        mc.runcmdEx(`playsound ${playerMenu.buttons[sourceSlot].sound} ${player.realName}`);
+    }
+    if (playerMenu.buttons[sourceSlot].isLastButton){
+        playerMenu.close();
+    }else{
+        if (playerMenu.buttons[sourceSlot].isAutoClear){
+            playerMenu.clear();
+        }
+    }
+    callback ? callback(player) : undefined;
+});
+
+// 事件：关闭菜单
+Event.listen("onSendContainerClosePacket", (player)=>{
+    if (allMenu[player.uuid] == undefined){return;}
+    player.refreshItems();
+    delete allMenu[player.uuid];
+});
+
+
+
+class BackpackMenu {
+    constructor(player){
+        this.player = player;
+        this.buttons = {};
+        this.buttonDefault = {}; // 默认按钮设置
+        this.#init();
+        allMenu[player.uuid] = this;
+    }
+
+    /**
+     * @description: 打开并清空菜单
+     * @return {*}
+     */    
+    #init(){
+        openInventory(this.player);
+        this.clear();
+    } 
+
+    /**
+     * @description: 更新按钮
+     * @param {object} args
+     * @param {number} args.slot 物品栏槽位
+     * @param {item} [args.item] 物品对象
+     * @param {string} [args.type] 物品类型
+     * @param {number} [args.count] 堆叠数量
+     * @param {string} [args.displayName] 物品名称 
+     * @param {Array.<string>} [args.loreNames] 物品lore
+     * @param {boolean} [args.isEnchanted] 是否附魔
+     * @param {string} [args.sound] 按钮音效
+     * @param {function} [args.callback] 按钮回调函数
+     * @param {boolean} [args.isAutoClear] 按下按钮后是否自动清空菜单
+     * @param {boolean} [args.isLastButton] 是否是最后一个按钮(点击此按钮后菜单关闭)
+     * @return {*}
+     */    
+    updateButton({slot, item, type, count, displayName, loreNames, isEnchanted, sound, callback, isAutoClear, isLastButton}){
+        type = type ?? (this.buttonDefault.type ?? "minecraft:air");
+        count = count ?? (this.buttonDefault.count ?? 1);
+        displayName = displayName ?? this.buttonDefault.displayName;
+        loreNames = loreNames ?? this.buttonDefault.loreNames;
+        isEnchanted = isEnchanted ?? this.buttonDefault.isEnchanted;
+        sound = sound ?? this.buttonDefault.sound;
+        callback = callback ?? this.buttonDefault.callback;
+        isAutoClear = isLastButton ?? (this.buttonDefault.isAutoClear?? true);
+        isLastButton = isLastButton ?? this.buttonDefault.isLastButton;
+        item = item ?? (this.buttonDefault.item ?? mc.newItem(type, count));
+
+        if (displayName){
+            item.setDisplayName(displayName);
+        }
+        if (loreNames){
+            item.setLore(loreNames);
+        }
+        if (isEnchanted){
+            item.setNbt(item.getNbt().setTag("tag", item.getNbt().getTag("tag").setTag("ench", new NbtList([]))));
+        }
+        this.buttons[slot] = {item: item, sound: sound, callback: callback, isAutoClear:isAutoClear, isLastButton:isLastButton};
+        updateItem(this.player, slot, item);
+    }
+
+    /**
+     * @description: 清空菜单
+     * @return {*}
+     */    
+    clear(){
+        this.buttonDefault = {}; // 清空已设定的默认值
+        for (let slot = 0; slot < 36; slot++){
+            this.updateButton({slot: slot, type: "minecraft:air"});
+        }
+    }
+
+    /**
+     * @description: 关闭菜单
+     * @return {*}
+     */   
+    close(){
+        closeInventory(this.player);
+        delete allMenu[this.player.uuid];
+        this.player.refreshItems();
+    }
+}
+
+const newBackpackMenu = (player)=>{
+    return allMenu[player.uuid] ?? new BackpackMenu(player);
+};
 
 
 
@@ -158,48 +332,106 @@ const msgToString = msg => {
 
 
 
+//=========================================
+//=========================================
+// 测试 在其他插件中还是需要require调用
 
-// 以下为发包示例
+let tmp = {};
+mc.listen("onUseItemOn",function(pl, item){
+    if (pl.isSimulatedPlayer()){return;}
+    if (tmp[pl.xuid]!=null){return;}
+    tmp[pl.xuid] = true;
+    setTimeout(()=>{
+        delete tmp[pl.xuid];
+    }, 300);
 
+    if (item.type == "minecraft:iron_ingot") {
+        setTimeout(()=>{
+            mainMenu(pl);
+        },50); // 延迟以防止原版MC自动刷新物品栏
+        return false;
+    }
+});
 
-// /**
-//  * 发送打开背包数据包
-//  * @param {Player} player
-//  */
-// const openInventory = player => {
-//     const bs = new GMLIB_BinaryStream();
-//     bs.writePacketHeader(/* MinecraftPacketIds::ContainerOpen */0x2E); // Packet Header
-//     bs.writeByte(/* ContainerID::Inventory */0); // Container ID
-//     bs.writeByte(/* ContainerType::Inventory */-1); // Container Type
-//     bs.writeBlockPos(player.blockPos); // Container Position
-//     bs.writeVarInt64(-1); // Container Entity ID
-//     bs.sendTo(player);
-// };
+function mainMenu(pl){
+    let playerMenu = newBackpackMenu(pl);
+    playerMenu.buttonDefault.type = "minecraft:diamond"; // 设置默认物品类型
+    playerMenu.buttonDefault.sound = "bottle.fill"; // 设置默认按钮音效
+    playerMenu.updateButton({
+        slot: 0, 
+        displayName: "§e按钮0",
+        callback: (pl)=>{
+            log(`按下按钮 0`);
+            subMenu(pl);
+        }
+    });
 
-// /**
-//  * 发送关闭背包数据包
-//  * @param {Player} player
-//  */
-// const closeInventory = player => {
-//     const bs = new GMLIB_BinaryStream();
-//     bs.writePacketHeader(/* MinecraftPacketIds::ContainerClose */0x2F); // Packet Header
-//     bs.writeByte(/* ContainerID::Inventory */0); // Container ID
-//     bs.writeByte(/* ContainerType::Inventory */-1); // Container Type
-//     bs.writeBool(true); // Server Initiated Close
-//     bs.sendTo(player);
-// };
+    playerMenu.updateButton({
+        slot: 1, 
+        count: 2,
+        displayName: "§a按钮1",
+        isEnchanted: true,
+        callback: (pl)=>{
+            log(`按下按钮 1`);
+            subMenu(pl);
+        }
+    });
+    playerMenu.updateButton({
+        slot: 2, 
+        count: 4,
+        displayName: "按钮2",
+        loreNames: ["§b我是按钮2", "§d传说品质"],
+        callback: (pl)=>{
+            log(`按下按钮 2`);
+            subMenu(pl);
+        }
+    });
+    playerMenu.updateButton({
+        slot: 17, 
+        type: "minecraft:barrier", 
+        displayName: "关闭",
+        sound: "bottle.empty",
+        callback: (pl)=>{log(`按钮关闭菜单`);},
+        isLastButton: true,
+    });
+}
 
-// /**
-//  * 更新背包物品
-//  * @param {Player} player
-//  * @param {number} slot
-//  * @param {Item} item
-//  */
-// const updateItem = (player, slot, item) => {
-//     const bs = new GMLIB_BinaryStream();
-//     bs.writePacketHeader(/* MinecraftPacketIds::InventorySlot */0x32); // Packet Header
-//     bs.writeUnsignedVarInt(0); // Container ID
-//     bs.writeUnsignedVarInt(slot); // Slot ID
-//     bs.writeItem(item); // Item
-//     bs.sendTo(player);
-// }
+function subMenu(pl){
+    let playerMenu = newBackpackMenu(pl);
+    playerMenu.updateButton({
+        slot: 20,
+        type: "minecraft:redstone", 
+        displayName: "§e功能0",
+        sound: "beacon.activate",
+        callback: (pl)=>{pl.tell(`功能 0`);},
+        isLastButton: true
+    });
+    playerMenu.updateButton({
+        slot: 22,
+        type: "minecraft:redstone", 
+        displayName: "§a功能1",
+        isEnchanted: true,
+        sound: "beacon.activate",
+        callback: (pl)=>{pl.tell(`功能 1`);},
+        isLastButton: true
+    });
+    playerMenu.updateButton({
+        slot: 24,
+        type: "minecraft:redstone", 
+        displayName: "§a功能2",
+        loreNames: ["§b功能2", "§d传说品质"],
+        sound: "beacon.activate",
+        callback: (pl)=>{pl.tell(`功能 2`);},
+        isLastButton: true
+    });
+    playerMenu.updateButton({
+        slot: 17,
+        type: "minecraft:compass", 
+        displayName: "返回",
+        sound: "block.itemframe.remove_item",
+        callback: (pl)=>{
+            log(`返回`);
+            mainMenu(pl);
+        }
+    });
+}
